@@ -17,25 +17,23 @@ frappe.ui.form.on('B2B Pick Report', {
 		// ── Print Summary ────────────────────────────────────────────────
 		frm.call_button_print_summary = async function () {
 			const doc = frm.doc;
-			const item_codes = (doc.items || []).map(i => i.item_code);
 
-			let barcodeMap = {};
-			if (item_codes.length) {
-				const res = await frappe.call({
-					method: 'order_picking.api.api.get_item_barcodes',
-					args: { item_codes: JSON.stringify(item_codes) }
-				});
-				barcodeMap = res.message || {};
-			}
+			// Build item_code → scanned barcode from scan log (only barcodes actually scanned)
+			const scannedBarcodeMap = {};
+			(doc.log || []).forEach(log => {
+				if (log.item_code && log.barcode && log.barcode !== '(F9 override)') {
+					scannedBarcodeMap[log.item_code] = log.barcode;
+				}
+			});
 
 			const td = (content, style) =>
 				`<td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;${style||''}">${content}</td>`;
 
 			const rows = (doc.items || []).map((item, idx) => {
 				const over = item.picked_qty > item.order_qty && item.order_qty > 0;
-				const barcodes = (barcodeMap[item.item_code] || []).join(', ');
-				const skuCell = item.item_code + (barcodes
-					? `<br><span style="font-weight:normal;font-size:10px;color:#888;font-family:monospace">${barcodes}</span>`
+				const scannedBC = scannedBarcodeMap[item.item_code] || '';
+				const skuCell = item.item_code + (scannedBC
+					? `<br><span style="font-weight:normal;font-size:10px;color:#888;font-family:monospace">${scannedBC}</span>`
 					: '');
 				return `<tr>
 					${td(idx + 1, 'color:#999')}
@@ -134,6 +132,14 @@ ${logRows ? `<h3>Scan Log (${(doc.log || []).length} scans)</h3>
 				pickedMap[i.item_code] = (pickedMap[i.item_code] || 0) + (i.picked_qty || 0);
 			});
 
+			// Build item-code → scanned barcode map from scan log (only barcodes actually scanned)
+			const scannedBarcodeMap = {};
+			(doc.log || []).forEach(log => {
+				if (log.item_code && log.barcode && log.barcode !== '(F9 override)') {
+					scannedBarcodeMap[log.item_code] = log.barcode;
+				}
+			});
+
 			const fmt = (n) => parseFloat(n || 0).toLocaleString('en-KW', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 			const cur = so.currency || 'KWD';
 
@@ -143,7 +149,7 @@ ${logRows ? `<h3>Scan Log (${(doc.log || []).length} scans)</h3>
 				`<svg data-bc="${value}" style="display:block;width:130px;height:36px;margin-top:2px"></svg>`;
 
 			const rows = so.items.map((item, idx) => {
-				const barcodes = item.barcodes || [];
+				const scannedBC = scannedBarcodeMap[item.item_code] || '';
 				const picked = pickedMap[item.item_code] || 0;
 				const amount = (item.rate || 0) * picked;
 				totalOrderQty += item.qty || 0;
@@ -151,10 +157,10 @@ ${logRows ? `<h3>Scan Log (${(doc.log || []).length} scans)</h3>
 				grandTotal += amount;
 
 				const skuCell = `<strong style="font-size:12px">${item.item_code}</strong>`
-					+ barcodes.map(bc =>
-						`<br><span style="font-family:monospace;font-size:10px;color:#888">${bc}</span>`
-						+ bcSvg(bc)
-					).join('');
+					+ (scannedBC
+						? `<br><span style="font-family:monospace;font-size:10px;color:#888">${scannedBC}</span>`
+						  + bcSvg(scannedBC)
+						: '');
 
 				return `<tr>
 					<td style="${S.td}">${idx + 1}</td>

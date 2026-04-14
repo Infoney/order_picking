@@ -361,17 +361,9 @@ def get_sales_order_print_data(so_name):
 
 	items = []
 	for item in so.items:
-		barcodes = frappe.db.get_all(
-			"Item Barcode",
-			filters={"parent": item.item_code},
-			fields=["barcode"],
-			order_by="idx asc"
-		)
-		bc_list = [b.barcode for b in barcodes if b.barcode]
 		items.append({
 			"item_code": item.item_code,
 			"item_name": item.item_name or "",
-			"barcodes": bc_list,
 			"qty": item.qty,
 			"uom": item.uom or "Nos",
 			"rate": item.rate,
