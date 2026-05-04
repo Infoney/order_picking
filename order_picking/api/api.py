@@ -489,6 +489,83 @@ def submit_b2b_material_request(mr_name):
 	return {"status": "success", "mr_name": doc.name}
 
 
+def _fmt_qty(q):
+	f = float(q or 0)
+	return "{:.0f}".format(f) if f == int(f) else "{:.3f}".format(f).rstrip("0").rstrip(".")
+
+
+def _sync_so_to_picked(so_name, mr_doc):
+	"""
+	Align a submitted Sales Order with what was actually picked (called only on partial picks).
+	- Items not picked at all are removed.
+	- Items picked in lower qty have their qty reduced.
+	- Fully-picked items (and over-picks) are left unchanged.
+	Uses ERPNext's update_child_qty_rate so the SO can be modified post-submit.
+	Returns a list of human-readable change strings.
+	"""
+	from erpnext.controllers.accounts_controller import update_child_qty_rate
+	import json as _json
+
+	picked_qty_map = {}
+	for it in mr_doc.items:
+		picked_qty_map[it.item_code] = picked_qty_map.get(it.item_code, 0) + (it.qty or 0)
+
+	so_doc = frappe.get_doc("Sales Order", so_name)
+	if so_doc.docstatus != 1:
+		return []
+
+	rows_by_code = {}
+	for row in so_doc.items:
+		rows_by_code.setdefault(row.item_code, []).append(row)
+
+	trans_items = []
+	changes = []
+
+	for item_code, rows in rows_by_code.items():
+		total_orig = sum(r.qty for r in rows)
+		picked = picked_qty_map.get(item_code, 0)
+
+		if picked <= 0:
+			changes.append(_("Removed: {0} (was {1}, not picked)").format(item_code, _fmt_qty(total_orig)))
+			continue
+
+		if picked >= total_orig:
+			for r in rows:
+				trans_items.append({
+					"item_code": r.item_code,
+					"qty": r.qty,
+					"rate": r.rate,
+					"docname": r.name,
+				})
+			continue
+
+		remaining = picked
+		for r in rows:
+			if remaining <= 0:
+				break
+			allocate = min(r.qty, remaining)
+			trans_items.append({
+				"item_code": r.item_code,
+				"qty": allocate,
+				"rate": r.rate,
+				"docname": r.name,
+			})
+			remaining -= allocate
+		changes.append(_("Reduced: {0} qty {1} → {2}").format(item_code, _fmt_qty(total_orig), _fmt_qty(picked)))
+
+	if not changes:
+		return []
+
+	prev_ignore = frappe.flags.ignore_permissions
+	frappe.flags.ignore_permissions = True
+	try:
+		update_child_qty_rate("Sales Order", _json.dumps(trans_items), so_name)
+	finally:
+		frappe.flags.ignore_permissions = prev_ignore
+
+	return changes
+
+
 @frappe.whitelist()
 def create_b2b_stock_entry(mr_name, cost_center, purpose_of_transfer="", is_partial=0, original_items=None, picking_log=None):
 	"""
@@ -556,6 +633,21 @@ def create_b2b_stock_entry(mr_name, cost_center, purpose_of_transfer="", is_part
 				"B2B Order Pick - Mark SO"
 			)
 
+		# On partial picks: align Sales Order items with what was actually picked
+		# (drop unpicked items, reduce qty for partially picked items).
+		so_change_msg = ""
+		if is_partial:
+			try:
+				changes = _sync_so_to_picked(so_name, mr_doc)
+				if changes:
+					so_change_msg = "<br>" + _("Items adjusted to match pick:") + "<br>" + "<br>".join(changes)
+			except Exception as e:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"B2B Order Pick - Sync SO Items {so_name}"
+				)
+				so_change_msg = "<br>" + _("(Item sync failed: {0})").format(str(e))
+
 		so_doc = frappe.get_doc("Sales Order", so_name)
 		so_doc.add_comment(
 			"Info",
@@ -563,7 +655,7 @@ def create_b2b_stock_entry(mr_name, cost_center, purpose_of_transfer="", is_part
 				"Order picked and processed via B2B Order Pick App. "
 				"Status: {2}. "
 				"Material Request: {0}, Stock Entry: {1}"
-			).format(mr_doc.name, se.name, b2b_status)
+			).format(mr_doc.name, se.name, b2b_status) + so_change_msg
 		)
 
 	frappe.db.commit()

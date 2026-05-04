@@ -8,7 +8,8 @@
         "naming_series",
         "picked_by",
         "picking_date",
-        "invoices"
+        "invoices",
+        "amended_from"
     ],
     "fields": [
         {
@@ -36,6 +37,16 @@
             "fieldtype": "Table",
             "label": "Invoices",
             "options": "Order Pick Item"
+        },
+        {
+            "fieldname": "amended_from",
+            "fieldtype": "Link",
+            "label": "Amended From",
+            "no_copy": 1,
+            "options": "Order Pick",
+            "print_hide": 1,
+            "read_only": 1,
+            "search_index": 1
         }
     ],
     "is_submittable": 1,
@@ -48,6 +59,8 @@
     "owner": "Administrator",
     "permissions": [
         {
+            "amend": 1,
+            "cancel": 1,
             "create": 1,
             "delete": 1,
             "email": 1,
