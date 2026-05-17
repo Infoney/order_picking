@@ -1,0 +1,187 @@
+{#-
+  Customer Invoice — branded, clean, customer copy.
+  Brand logo is looked up from the ERPNext Brand whose name matches the
+  Sales Invoice cost center (with the company-abbreviation suffix stripped,
+  e.g. "Ahuhu - KPG" → Brand "Ahuhu").
+-#}
+{%- set cc_clean = (doc.cost_center or '').rsplit(' - ', 1)[0] | trim -%}
+{%- set brand_row = frappe.db.get_value('Brand', cc_clean, ['name', 'image'], as_dict=True) if cc_clean else None -%}
+{%- set brand_logo = brand_row.image if brand_row else None -%}
+{%- set brand_name = brand_row.name if brand_row else (cc_clean or doc.company) -%}
+{%- set cur = doc.currency or 'KWD' -%}
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(v or 0, currency=cur) }}{%- endmacro -%}
+
+<style>
+  @page { margin: 14mm 16mm; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; color: #1f2937; font-size: 12px; }
+  .inv-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .inv-head .brand img { max-height: 64px; max-width: 240px; object-fit: contain; }
+  .inv-head .brand .brand-name { font-size: 20px; font-weight: 700; color: #111827; letter-spacing: 0.3px; }
+  .inv-head .title { text-align: right; }
+  .inv-head .title h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: 2px; color: #111827; }
+  .inv-head .title .copy { display: inline-block; margin-top: 6px; padding: 3px 10px; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; border: 1px solid #d1d5db; border-radius: 3px; text-transform: uppercase; }
+  .rule { border: 0; border-top: 2px solid #111827; margin: 6px 0 16px; }
+
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 24px; margin-bottom: 18px; }
+  .meta .lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 2px; }
+  .meta .val { font-size: 12px; color: #111827; }
+
+  .addr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 18px; }
+  .addr-box { padding: 12px 14px; background: #f9fafb; border-left: 3px solid #111827; }
+  .addr-box .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 6px; }
+  .addr-box .name { font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+  .addr-box .lines { font-size: 11px; color: #4b5563; line-height: 1.6; }
+
+  table.items { border-collapse: collapse; width: 100%; margin-bottom: 0; }
+  table.items thead th { background: #111827; color: #fff; text-align: left; padding: 9px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+  table.items thead th.num { text-align: right; }
+  table.items tbody td { padding: 9px 10px; border-bottom: 1px solid #e5e7eb; font-size: 12px; vertical-align: top; }
+  table.items tbody td.num { text-align: right; white-space: nowrap; }
+  table.items .idx { color: #9ca3af; width: 28px; }
+  table.items .sku { font-weight: 700; color: #111827; }
+  table.items .desc { color: #6b7280; font-size: 11px; margin-top: 2px; }
+
+  .totals { width: 320px; margin-left: auto; margin-top: 12px; }
+  .totals .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px; color: #4b5563; }
+  .totals .row .v { color: #111827; font-weight: 600; }
+  .totals .row.discount { color: #b45309; }
+  .totals .row.discount .v { color: #b45309; }
+  .totals .row.grand { margin-top: 6px; padding: 10px 12px; background: #111827; color: #fff; font-size: 14px; font-weight: 700; }
+  .totals .row.grand .v { color: #fff; font-size: 16px; }
+
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #6b7280; line-height: 1.6; text-align: center; }
+  .footer .thanks { font-size: 12px; font-weight: 600; color: #111827; margin-bottom: 4px; }
+  .terms { margin-top: 16px; padding: 10px 12px; background: #f9fafb; font-size: 10px; color: #6b7280; line-height: 1.6; }
+  .terms .lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 4px; }
+</style>
+
+<div class="inv-head">
+  <div class="brand">
+    {% if brand_logo %}
+      <img src="{{ brand_logo }}" alt="{{ brand_name }}">
+    {% else %}
+      <div class="brand-name">{{ brand_name }}</div>
+    {% endif %}
+  </div>
+  <div class="title">
+    <h1>INVOICE</h1>
+    <span class="copy">Customer Copy</span>
+  </div>
+</div>
+<hr class="rule">
+
+<div class="meta-grid">
+  <div class="meta">
+    <div class="lbl">Invoice No</div>
+    <div class="val">{{ doc.name }}</div>
+  </div>
+  <div class="meta">
+    <div class="lbl">Invoice Date</div>
+    <div class="val">{{ frappe.utils.formatdate(doc.posting_date) }}</div>
+  </div>
+  <div class="meta">
+    <div class="lbl">Due Date</div>
+    <div class="val">{{ frappe.utils.formatdate(doc.due_date) if doc.due_date else '&mdash;' }}</div>
+  </div>
+  {% if doc.po_no %}
+  <div class="meta">
+    <div class="lbl">Customer PO</div>
+    <div class="val">{{ doc.po_no }}</div>
+  </div>
+  {% endif %}
+  {% if doc.contact_display %}
+  <div class="meta">
+    <div class="lbl">Contact</div>
+    <div class="val">{{ doc.contact_display }}</div>
+  </div>
+  {% endif %}
+  {% if doc.contact_mobile or doc.contact_phone %}
+  <div class="meta">
+    <div class="lbl">Phone</div>
+    <div class="val">{{ doc.contact_mobile or doc.contact_phone }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="addr-grid">
+  <div class="addr-box">
+    <div class="lbl">Bill To</div>
+    <div class="name">{{ doc.customer_name or doc.customer }}</div>
+    <div class="lines">{{ doc.address_display or '' }}</div>
+  </div>
+  {% if doc.shipping_address %}
+  <div class="addr-box">
+    <div class="lbl">Ship To</div>
+    <div class="name">{{ doc.shipping_address_name or doc.customer_name or doc.customer }}</div>
+    <div class="lines">{{ doc.shipping_address or '' }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<table class="items">
+  <thead>
+    <tr>
+      <th class="idx">#</th>
+      <th>Item</th>
+      <th class="num">Qty</th>
+      <th class="num">Rate</th>
+      <th class="num">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in doc.items %}
+    <tr>
+      <td class="idx">{{ loop.index }}</td>
+      <td>
+        <div class="sku">{{ item.item_code }} &mdash; {{ item.item_name or '' }}</div>
+        {% if item.description and item.description != item.item_name %}
+          <div class="desc">{{ item.description | striptags | truncate(160) }}</div>
+        {% endif %}
+      </td>
+      <td class="num">{{ item.qty }} {{ item.uom or '' }}</td>
+      <td class="num">{{ money(item.rate) }}</td>
+      <td class="num">{{ money(item.amount) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div class="row">
+    <span>Subtotal</span>
+    <span class="v">{{ money(doc.total) }}</span>
+  </div>
+  {% if doc.discount_amount and doc.discount_amount > 0 %}
+  <div class="row discount">
+    <span>Discount{% if doc.additional_discount_percentage %} ({{ doc.additional_discount_percentage }}%){% endif %}</span>
+    <span class="v">&minus; {{ money(doc.discount_amount) }}</span>
+  </div>
+  {% endif %}
+  {% if doc.total_taxes_and_charges and doc.total_taxes_and_charges != 0 %}
+  <div class="row">
+    <span>{{ doc.taxes_and_charges or 'Tax' }}</span>
+    <span class="v">{{ money(doc.total_taxes_and_charges) }}</span>
+  </div>
+  {% endif %}
+  <div class="row grand">
+    <span>Grand Total</span>
+    <span class="v">{{ money(doc.grand_total) }}</span>
+  </div>
+  {% if doc.in_words %}
+  <div class="row" style="font-size:10px;color:#9ca3af;font-style:italic;justify-content:flex-end">
+    <span>{{ doc.in_words }}</span>
+  </div>
+  {% endif %}
+</div>
+
+{% if doc.terms %}
+<div class="terms">
+  <div class="lbl">Terms &amp; Conditions</div>
+  {{ doc.terms }}
+</div>
+{% endif %}
+
+<div class="footer">
+  <div class="thanks">Thank you for your business.</div>
+  {{ brand_name }} &nbsp;&middot;&nbsp; Generated on {{ frappe.utils.format_datetime(frappe.utils.now()) }}
+</div>

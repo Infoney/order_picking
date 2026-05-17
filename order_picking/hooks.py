@@ -47,5 +47,9 @@ after_migrate = "order_picking.setup.after_migrate"
 
 fixtures = [
 	{"dt": "Workspace", "filters": [["name", "=", "Order Picking"]]},
-	{"dt": "Print Format", "filters": [["doc_type", "=", "B2B Pick Report"]]}
+	{"dt": "Print Format", "filters": [["name", "in", [
+		"B2B Pick Report Summary",
+		"Customer Invoice",
+		"Sales Invoice Pick List",
+	]]]}
 ]
