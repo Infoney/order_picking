@@ -391,6 +391,7 @@ def get_sales_order_print_data(so_name):
 		"total_qty": so.total_qty or 0,
 		"total": so.total or 0,
 		"discount_amount": so.discount_amount or 0,
+		"net_total": so.net_total or 0,
 		"grand_total": so.grand_total or 0,
 		"taxes_and_charges": so.taxes_and_charges or "",
 		"total_taxes_and_charges": so.total_taxes_and_charges or 0,

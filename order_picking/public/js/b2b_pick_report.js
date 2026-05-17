@@ -282,6 +282,10 @@ ${logRows ? `<h3>Scan Log (${(doc.log || []).length} scans)</h3>
       <td colspan="6" style="${S.td}text-align:right">Grand Total</td>
       <td style="${S.td}${S.num}font-size:15px">${cur} ${fmt(grandTotal)}</td>
     </tr>
+    <tr>
+      <td colspan="6" style="${S.td}text-align:right;font-weight:bold">Net Total</td>
+      <td style="${S.td}${S.num}font-weight:bold">${cur} ${fmt(so.net_total)}</td>
+    </tr>
   </tbody>
 </table>
 

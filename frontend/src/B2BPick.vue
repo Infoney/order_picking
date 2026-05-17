@@ -1643,6 +1643,10 @@ const printCustomerOrder = async () => {
       <td colspan="6" style="${td}text-align:right">Grand Total</td>
       <td style="${td}${num}font-size:15px">${cur} ${fmt(grandTotal)}</td>
     </tr>
+    <tr>
+      <td colspan="6" style="${td}text-align:right;font-weight:bold">Net Total</td>
+      <td style="${td}${num}font-weight:bold">${cur} ${fmt(so.net_total)}</td>
+    </tr>
   </tbody>
 </table>
 <div class="footer">
