@@ -1,131 +1,348 @@
 {#-
-  Sales Invoice Pick List — branded picker-friendly sheet.
-  Brand logo is looked up from the ERPNext Brand whose name matches the
-  Sales Invoice cost center (with the company-abbreviation suffix stripped,
-  e.g. "Ahuhu - KPG" → Brand "Ahuhu").
+  Sales Invoice Pick List — Mizan/PALCO style: green status pill, big brand
+  title, info card, metric strip, calm tables with scannable Code-128 barcodes.
+  Brand is resolved from cost center (e.g. "Ahuhu - KPG" -> Brand "Ahuhu").
 -#}
-{%- set cc_clean = (doc.cost_center or '').rsplit(' - ', 1)[0] | trim -%}
-{%- set brand_row = frappe.db.get_value('Brand', cc_clean, ['name', 'image'], as_dict=True) if cc_clean else None -%}
-{%- set brand_logo = brand_row.image if brand_row else None -%}
-{%- set brand_name = brand_row.name if brand_row else (cc_clean or doc.company) -%}
+{%- set brand = brand_for_cost_center(doc.cost_center) -%}
+{%- set total_qty = doc.total_qty or (doc.items | sum(attribute='qty')) -%}
 
 <style>
-  @page { margin: 12mm 14mm; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; color: #1f2937; font-size: 12px; }
-  .pl-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-  .pl-head .brand img { max-height: 60px; max-width: 220px; object-fit: contain; }
-  .pl-head .brand .brand-name { font-size: 18px; font-weight: 700; color: #111827; }
-  .pl-head .title { text-align: right; }
-  .pl-head .title h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 2px; color: #111827; }
-  .pl-head .title .sub { font-size: 11px; color: #6b7280; margin-top: 2px; letter-spacing: 0.5px; }
-  .rule { border: 0; border-top: 2px solid #111827; margin: 6px 0 14px; }
+  @page { margin: 12mm 14mm 16mm; }
 
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px 18px; margin-bottom: 14px; }
-  .meta .lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 2px; }
-  .meta .val { font-size: 12px; color: #111827; font-weight: 600; }
+  /* ── base ────────────────────────────────────────────────────────── */
+  body {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #1f2937; font-size: 12px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; }
 
-  table.items { border-collapse: collapse; width: 100%; }
-  table.items thead th { background: #111827; color: #fff; text-align: left; padding: 9px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-  table.items thead th.num { text-align: right; }
-  table.items thead th.ctr { text-align: center; }
-  table.items tbody td { padding: 10px; border-bottom: 1px solid #e5e7eb; font-size: 12px; vertical-align: middle; }
-  table.items tbody td.num { text-align: right; }
-  table.items tbody td.ctr { text-align: center; }
-  table.items .idx { color: #9ca3af; width: 28px; }
-  table.items .sku { font-weight: 700; color: #111827; font-size: 13px; }
-  table.items .name { color: #4b5563; font-size: 11px; margin-top: 2px; }
-  table.items .bc { font-family: "Courier New", monospace; font-size: 11px; color: #111827; background: #f3f4f6; padding: 2px 6px; border-radius: 3px; letter-spacing: 1px; display: inline-block; }
-  table.items .qty-big { font-size: 18px; font-weight: 800; color: #111827; }
-  table.items .pick-box { display: inline-block; width: 18px; height: 18px; border: 2px solid #9ca3af; border-radius: 3px; vertical-align: middle; }
-  table.items tbody tr:nth-child(even) td { background: #fafafa; }
+  /* ── top status strip ────────────────────────────────────────────── */
+  .top-strip {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1.5px solid #16a34a;
+    color: #16a34a;
+    border-radius: 4px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 1.2px; text-transform: uppercase;
+  }
+  .printed-ts { font-size: 10px; color: #6b7280; }
 
-  .footer-sig { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  .sig-box { font-size: 11px; color: #6b7280; }
-  .sig-box .line { border-bottom: 1px solid #9ca3af; height: 28px; margin-bottom: 4px; }
-  .sig-box .lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; }
+  /* ── header ──────────────────────────────────────────────────────── */
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .head .left .doc-kind {
+    font-size: 12px; font-weight: 700; color: #1f2937;
+    letter-spacing: 0.6px; margin-bottom: 4px;
+  }
+  .head .left .brand-name {
+    font-size: 32px; font-weight: 800; color: #0f172a;
+    letter-spacing: -0.4px; line-height: 1;
+  }
+  .head .left .brand img {
+    max-height: 56px; max-width: 240px; object-fit: contain;
+    display: block; margin-top: 2px;
+  }
+  .head .right { text-align: right; font-size: 12px; line-height: 1.7; }
+  .head .right .kv { color: #6b7280; }
+  .head .right .kv strong { color: #1f2937; font-weight: 700; }
+  .head .right .inv-barcode {
+    display: inline-block; margin-top: 6px;
+    padding: 6px 10px 4px;
+    border: 1px solid #e5e7eb; border-radius: 4px;
+    background: #fff; line-height: 0;
+  }
+  .head .right .inv-barcode .bc-wrap { display: block; }
+  .head .right .inv-barcode .bc-wrap svg { display: block; height: 44px; width: 200px; }
+  .head .right .inv-barcode .bc-text {
+    display: block; margin-top: 3px;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 10px; color: #4b5563; letter-spacing: 0.6px;
+    line-height: 1.2; text-align: center;
+  }
+  .head .right .inv-barcode .bc-fallback {
+    display: inline-block;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 11px; color: #0f172a;
+    background: #f3f4f6; padding: 4px 8px; border-radius: 3px;
+    letter-spacing: 1.5px;
+  }
+  .rule { border: 0; border-top: 1px solid #e5e7eb; margin: 4px 0 18px; }
 
-  .footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; text-align: center; }
+  /* ── info card ───────────────────────────────────────────────────── */
+  .info-card {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 14px 18px; margin-bottom: 20px;
+  }
+  .info-card .row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+  }
+  .info-card .item .k { color: #6b7280; }
+  .info-card .item .v { color: #1f2937; font-weight: 700; margin-left: 4px; }
+
+  /* ── section title ───────────────────────────────────────────────── */
+  .sec-title {
+    display: flex; align-items: center; margin: 0 0 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: #1f2937;
+  }
+  .sec-title::before {
+    content: ""; display: inline-block;
+    width: 3px; height: 14px; background: #16a34a;
+    margin-right: 10px; border-radius: 1px;
+  }
+  .sec-sub { font-size: 11px; color: #6b7280; margin: -6px 0 12px; }
+
+  /* ── metric strip (Total Lines / Qty / Printed) ──────────────────── */
+  .metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 12px; margin-bottom: 20px;
+  }
+  .metric {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .metric .k {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 4px;
+  }
+  .metric .v {
+    font-size: 22px; font-weight: 800; color: #0f172a;
+    line-height: 1.1; letter-spacing: -0.3px;
+  }
+  .metric .sub { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+
+  /* ── items table ─────────────────────────────────────────────────── */
+  table.items {
+    border-collapse: collapse; width: 100%;
+    border: 1px solid #e5e7eb; border-radius: 6px;
+  }
+  table.items thead th {
+    background: #f9fafb; color: #374151;
+    text-align: left; padding: 10px 12px;
+    font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.5px; text-transform: uppercase;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  table.items thead th.r { text-align: right; }
+  table.items thead th.c { text-align: center; }
+  table.items tbody tr { page-break-inside: avoid; }
+  table.items tbody td {
+    padding: 12px; border-bottom: 1px solid #f1f5f9;
+    font-size: 12px; vertical-align: middle;
+  }
+  table.items tbody tr:last-child td { border-bottom: 0; }
+  table.items tbody td.r { text-align: right; }
+  table.items tbody td.c { text-align: center; }
+
+  .idx { color: #9ca3af; width: 28px; }
+  .check-box {
+    display: inline-block; width: 20px; height: 20px;
+    border: 1.5px solid #d1d5db; border-radius: 3px;
+    vertical-align: middle;
+  }
+  .sku {
+    font-size: 13px; font-weight: 700; color: #0f172a; letter-spacing: 0.2px;
+  }
+  .iname {
+    font-size: 11px; color: #4b5563; margin-top: 3px; line-height: 1.4;
+  }
+  .qty-big {
+    font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px;
+  }
+  .uom-small {
+    font-size: 10px; color: #6b7280; margin-left: 4px; font-weight: 500;
+  }
+
+  /* ── barcode (returned by render_barcode helper) ─────────────────── */
+  .bc-wrap { display: inline-block; line-height: 0; }
+  .bc-wrap svg { display: block; height: 38px; width: 150px; }
+  .bc-text {
+    display: block; margin-top: 2px;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 10px; color: #4b5563;
+    letter-spacing: 0.5px; line-height: 1.2;
+  }
+  .bc-fallback {
+    display: inline-block;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 12px; color: #0f172a;
+    background: #f3f4f6;
+    padding: 6px 10px; border-radius: 3px; letter-spacing: 1.5px;
+  }
+
+  /* ── signatures ──────────────────────────────────────────────────── */
+  .sigs {
+    margin-top: 26px;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 28px; page-break-inside: avoid;
+  }
+  .sig {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .sig .k {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 24px;
+  }
+  .sig .line { border-bottom: 1px solid #d1d5db; height: 1px; }
+  .sig .hint { font-size: 10px; color: #9ca3af; margin-top: 4px; }
+
+  /* ── footer ──────────────────────────────────────────────────────── */
+  .footer {
+    margin-top: 22px; padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .footer .company {
+    text-align: center;
+    font-size: 11px; font-weight: 700; color: #1f2937;
+    letter-spacing: 0.4px; margin-bottom: 6px;
+  }
+  .footer .meta {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #6b7280;
+  }
 </style>
 
-<div class="pl-head">
-  <div class="brand">
-    {% if brand_logo %}
-      <img src="{{ brand_logo }}" alt="{{ brand_name }}">
-    {% else %}
-      <div class="brand-name">{{ brand_name }}</div>
-    {% endif %}
+{# ── Top status strip ────────────────────────────────────────────── #}
+<div class="top-strip">
+  <span class="pill">Pick List · Warehouse Copy</span>
+  <span class="printed-ts">Printed: {{ frappe.utils.format_datetime(frappe.utils.now()) }}</span>
+</div>
+
+{# ── Header ──────────────────────────────────────────────────────── #}
+<div class="head">
+  <div class="left">
+    <div class="doc-kind">PICK LIST</div>
+    <div class="brand">
+      {% if brand.image %}
+        <img src="{{ brand.image }}" alt="{{ brand.name }}">
+      {% else %}
+        <div class="brand-name">{{ (brand.name or doc.company) | upper }}</div>
+      {% endif %}
+    </div>
   </div>
-  <div class="title">
-    <h1>PICK LIST</h1>
-    <div class="sub">Invoice {{ doc.name }}</div>
+  <div class="right">
+    <div class="kv"><strong>Invoice:</strong> {{ doc.name }}</div>
+    <div class="inv-barcode">{{ render_barcode(doc.name) | safe }}</div>
+    <div class="kv"><strong>Lines:</strong> {{ doc.items | length }}</div>
+    <div class="kv">Date: {{ frappe.utils.formatdate(doc.posting_date) }}</div>
   </div>
 </div>
 <hr class="rule">
 
-<div class="meta-grid">
-  <div class="meta">
-    <div class="lbl">Customer</div>
-    <div class="val">{{ doc.customer_name or doc.customer }}</div>
-  </div>
-  <div class="meta">
-    <div class="lbl">Invoice Date</div>
-    <div class="val">{{ frappe.utils.formatdate(doc.posting_date) }}</div>
-  </div>
-  <div class="meta">
-    <div class="lbl">Total Lines</div>
-    <div class="val">{{ doc.items | length }}</div>
-  </div>
-  <div class="meta">
-    <div class="lbl">Total Qty</div>
-    <div class="val">{{ doc.total_qty or (doc.items | sum(attribute='qty')) }}</div>
+{# ── Info card ──────────────────────────────────────────────────── #}
+<div class="info-card">
+  <div class="row">
+    <div class="item">
+      <span class="k">Customer:</span><span class="v">{{ doc.customer_name or doc.customer }}</span>
+    </div>
+    <div class="item">
+      <span class="k">Territory:</span><span class="v">{{ doc.territory or '—' }}</span>
+    </div>
+    <div class="item">
+      <span class="k">Invoice Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.posting_date) }}</span>
+    </div>
+    <div class="item">
+      <span class="k">PO No:</span><span class="v">{{ doc.po_no or '—' }}</span>
+    </div>
   </div>
 </div>
 
+{# ── Pick Summary ───────────────────────────────────────────────── #}
+<div class="sec-title">Pick Summary</div>
+<div class="metrics">
+  <div class="metric">
+    <div class="k">Total Lines</div>
+    <div class="v num">{{ doc.items | length }}</div>
+    <div class="sub">SKUs to pick</div>
+  </div>
+  <div class="metric">
+    <div class="k">Total Qty</div>
+    <div class="v num">{{ total_qty }}</div>
+    <div class="sub">Units across all lines</div>
+  </div>
+  <div class="metric">
+    <div class="k">Generated</div>
+    <div class="v num" style="font-size:14px">{{ frappe.utils.format_datetime(frappe.utils.now()) }}</div>
+    <div class="sub">Print timestamp</div>
+  </div>
+</div>
+
+{# ── Items ──────────────────────────────────────────────────────── #}
+<div class="sec-title">Items</div>
 <table class="items">
   <thead>
     <tr>
       <th class="idx">#</th>
-      <th class="ctr" style="width:36px">&#10003;</th>
-      <th>Item Code &amp; Name</th>
+      <th class="c" style="width:32px">✓</th>
+      <th>Item</th>
       <th>Barcode</th>
-      <th class="num">Qty</th>
-      <th>UOM</th>
+      <th class="r">Qty</th>
       <th>Warehouse</th>
     </tr>
   </thead>
   <tbody>
     {% for item in doc.items %}
-    {%- set barcodes = frappe.db.get_all('Item Barcode', filters={'parent': item.item_code}, fields=['barcode'], order_by='idx asc', limit=1) -%}
+    {%- set barcodes = frappe.db.get_all(
+        'Item Barcode',
+        filters={'parent': item.item_code},
+        fields=['barcode'],
+        order_by='idx asc',
+        limit=1
+      ) -%}
     {%- set bc = barcodes[0].barcode if barcodes else item.item_code -%}
     <tr>
-      <td class="idx">{{ loop.index }}</td>
-      <td class="ctr"><span class="pick-box"></span></td>
+      <td class="idx num">{{ loop.index }}</td>
+      <td class="c"><span class="check-box"></span></td>
       <td>
         <div class="sku">{{ item.item_code }}</div>
         {% if item.item_name and item.item_name != item.item_code %}
-          <div class="name">{{ item.item_name }}</div>
+          <div class="iname">{{ item.item_name }}</div>
         {% endif %}
       </td>
-      <td><span class="bc">{{ bc }}</span></td>
-      <td class="num"><span class="qty-big">{{ item.qty }}</span></td>
-      <td>{{ item.uom or 'Nos' }}</td>
-      <td style="font-size:11px;color:#6b7280">{{ item.warehouse or '' }}</td>
+      <td>{{ render_barcode(bc) | safe }}</td>
+      <td class="r">
+        <span class="qty-big num">{{ item.qty }}</span>
+        <span class="uom-small">{{ item.uom or 'Nos' }}</span>
+      </td>
+      <td style="font-size:11px; color:#4b5563">{{ item.warehouse or '—' }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 
-<div class="footer-sig">
-  <div class="sig-box">
+{# ── Signatures ─────────────────────────────────────────────────── #}
+<div class="sec-title" style="margin-top:24px">Sign-off</div>
+<div class="sigs">
+  <div class="sig">
+    <div class="k">Picked By</div>
     <div class="line"></div>
-    <div class="lbl">Picked By &middot; Signature &amp; Date</div>
+    <div class="hint">Signature &amp; date</div>
   </div>
-  <div class="sig-box">
+  <div class="sig">
+    <div class="k">Checked By</div>
     <div class="line"></div>
-    <div class="lbl">Checked By &middot; Signature &amp; Date</div>
+    <div class="hint">Signature &amp; date</div>
   </div>
 </div>
 
+{# ── Footer ────────────────────────────────────────────────────── #}
 <div class="footer">
-  {{ brand_name }} &nbsp;&middot;&nbsp; Pick List for {{ doc.name }} &nbsp;&middot;&nbsp; Printed {{ frappe.utils.format_datetime(frappe.utils.now()) }}
+  <div class="company">{{ doc.company }}</div>
+  <div class="meta">
+    <div>Printed by: {{ frappe.session.user if frappe.session else '—' }}</div>
+    <div>Generated: {{ frappe.utils.format_datetime(frappe.utils.now()) }}</div>
+  </div>
 </div>
+{%- if not brand.found %}
+<!-- brand lookup: no Brand record matched. cost_center="{{ doc.cost_center }}", tried={{ brand.tried }} -->
+{%- endif %}

@@ -31,6 +31,7 @@ required_apps = ["erpnext"]
 # include js in doctype views
 doctype_js = {
 	"Sales Order": "public/js/sales_order.js",
+	"Sales Invoice": "public/js/sales_invoice.js",
 	"B2B Pick Report": "public/js/b2b_pick_report.js"
 }
 doctype_list_js = {"Sales Invoice": "public/js/sales_invoice_list.js"}
@@ -44,6 +45,14 @@ website_route_rules = [
 ]
 
 after_migrate = "order_picking.setup.after_migrate"
+
+# Expose helpers to Jinja (Print Formats, Notification templates, etc.)
+jenv = {
+	"methods": [
+		"render_barcode:order_picking.jinja.render_barcode",
+		"brand_for_cost_center:order_picking.jinja.brand_for_cost_center",
+	],
+}
 
 fixtures = [
 	{"dt": "Workspace", "filters": [["name", "=", "Order Picking"]]},
