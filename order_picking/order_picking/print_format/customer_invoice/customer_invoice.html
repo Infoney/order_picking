@@ -16,9 +16,11 @@
 {%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
 {%- set cur = doc.currency or 'KWD' -%}
 {%- macro money(v) -%}{{ frappe.utils.fmt_money(v or 0, currency=cur) }}{%- endmacro -%}
-{%- macro barcode(v) -%}
-  {%- if render_barcode is defined -%}{{ render_barcode(v) | safe }}
-  {%- else -%}<span class="bc-fallback">{{ v }}</span>{%- endif -%}
+{%- macro barcode(v, h='40', w='1.0') -%}
+  <span class="bc-wrap">
+    <svg class="js-barcode" data-value="{{ v }}" data-bar-w="{{ w }}" data-bar-h="{{ h }}"></svg>
+    <span class="bc-text">{{ v }}</span>
+  </span>
 {%- endmacro -%}
 
 <style>
@@ -75,7 +77,9 @@
     background: #fff; line-height: 0;
   }
   .head .right .inv-barcode .bc-wrap { display: block; }
-  .head .right .inv-barcode .bc-wrap svg { display: block; height: 44px; width: 200px; }
+  .head .right .inv-barcode .bc-wrap svg {
+    display: block; height: 44px; max-width: 240px;
+  }
   .head .right .inv-barcode .bc-text {
     display: block; margin-top: 3px;
     font-family: "Courier New", ui-monospace, monospace;
@@ -228,7 +232,6 @@
 {# ── Header ──────────────────────────────────────────────────────── #}
 <div class="head">
   <div class="left">
-    <div class="doc-kind">TAX INVOICE</div>
     <div class="brand">
       {% if brand.image %}
         <img src="{{ brand.image }}" alt="{{ brand.name }}">
@@ -374,3 +377,27 @@
 {%- if not brand.found %}
 <!-- brand lookup: no Brand record matched. cost_center="{{ doc.cost_center }}", tried={{ brand.tried }} -->
 {%- endif %}
+
+{# ── Barcode rendering (client-side, no server deps) ──────────── #}
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+(function () {
+  function render() {
+    if (typeof JsBarcode === 'undefined') return setTimeout(render, 50);
+    document.querySelectorAll('svg.js-barcode').forEach(function (el) {
+      if (el.dataset.rendered) return;
+      try {
+        JsBarcode(el, el.getAttribute('data-value'), {
+          format: 'CODE128',
+          width: parseFloat(el.getAttribute('data-bar-w')) || 1.0,
+          height: parseFloat(el.getAttribute('data-bar-h')) || 40,
+          displayValue: false,
+          margin: 2,
+        });
+        el.dataset.rendered = '1';
+      } catch (e) { /* leave svg empty if encoding fails */ }
+    });
+  }
+  render();
+})();
+</script>

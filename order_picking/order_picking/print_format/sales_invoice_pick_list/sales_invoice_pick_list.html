@@ -15,9 +15,11 @@
 {%- endif -%}
 {%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
 {%- set total_qty = doc.total_qty or (doc.items | sum(attribute='qty')) -%}
-{%- macro barcode(v) -%}
-  {%- if render_barcode is defined -%}{{ render_barcode(v) | safe }}
-  {%- else -%}<span class="bc-fallback">{{ v }}</span>{%- endif -%}
+{%- macro barcode(v, h='40', w='1.0') -%}
+  <span class="bc-wrap">
+    <svg class="js-barcode" data-value="{{ v }}" data-bar-w="{{ w }}" data-bar-h="{{ h }}"></svg>
+    <span class="bc-text">{{ v }}</span>
+  </span>
 {%- endmacro -%}
 
 <style>
@@ -74,7 +76,9 @@
     background: #fff; line-height: 0;
   }
   .head .right .inv-barcode .bc-wrap { display: block; }
-  .head .right .inv-barcode .bc-wrap svg { display: block; height: 44px; width: 200px; }
+  .head .right .inv-barcode .bc-wrap svg {
+    display: block; height: 44px; max-width: 240px;
+  }
   .head .right .inv-barcode .bc-text {
     display: block; margin-top: 3px;
     font-family: "Courier New", ui-monospace, monospace;
@@ -176,9 +180,9 @@
     font-size: 10px; color: #6b7280; margin-left: 4px; font-weight: 500;
   }
 
-  /* ── barcode (returned by render_barcode helper) ─────────────────── */
+  /* ── barcode (client-side rendered via JsBarcode) ────────────────── */
   .bc-wrap { display: inline-block; line-height: 0; }
-  .bc-wrap svg { display: block; height: 38px; width: 150px; }
+  .bc-wrap svg { display: block; height: 32px; max-width: 170px; }
   .bc-text {
     display: block; margin-top: 2px;
     font-family: "Courier New", ui-monospace, monospace;
@@ -323,7 +327,7 @@
           <div class="iname">{{ item.item_name }}</div>
         {% endif %}
       </td>
-      <td>{{ barcode(bc) }}</td>
+      <td>{{ barcode(bc, h='32', w='0.9') }}</td>
       <td class="r">
         <span class="qty-big num">{{ item.qty }}</span>
         <span class="uom-small">{{ item.uom or 'Nos' }}</span>
@@ -360,3 +364,27 @@
 {%- if not brand.found %}
 <!-- brand lookup: no Brand record matched. cost_center="{{ doc.cost_center }}", tried={{ brand.tried }} -->
 {%- endif %}
+
+{# ── Barcode rendering (client-side, no server deps) ──────────── #}
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+(function () {
+  function render() {
+    if (typeof JsBarcode === 'undefined') return setTimeout(render, 50);
+    document.querySelectorAll('svg.js-barcode').forEach(function (el) {
+      if (el.dataset.rendered) return;
+      try {
+        JsBarcode(el, el.getAttribute('data-value'), {
+          format: 'CODE128',
+          width: parseFloat(el.getAttribute('data-bar-w')) || 1.0,
+          height: parseFloat(el.getAttribute('data-bar-h')) || 40,
+          displayValue: false,
+          margin: 2,
+        });
+        el.dataset.rendered = '1';
+      } catch (e) { /* leave svg empty if encoding fails */ }
+    });
+  }
+  render();
+})();
+</script>
