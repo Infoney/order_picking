@@ -4,16 +4,31 @@
   Brand lookup is inline (using frappe.db.get_value) so the template works
   even if the order_picking.jinja helpers aren't registered in jenv.
 -#}
+{# 1) Explicit mapping via Cost Center.custom_brand (preferred). #}
+{# 2) Else strip " - <Company>" suffix and match Brand by exact name. #}
+{# 3) Else try the first word of the cleaned name (e.g. "Ahuhu Care" -> "Ahuhu"). #}
+{%- set _cc_brand = frappe.db.get_value('Cost Center', doc.cost_center, 'custom_brand') if doc.cost_center else None -%}
 {%- set _cc = (doc.cost_center or '').rsplit(' - ', 1)[0].strip() -%}
-{%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) if _cc else None -%}
+{%- set _tried = [] -%}
+{%- set _brow = None -%}
+{%- if _cc_brand -%}
+  {%- set _ = _tried.append('Cost Center.custom_brand=' ~ _cc_brand) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc_brand, ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
+{%- if (not _brow) and _cc -%}
+  {%- set _ = _tried.append(_cc) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
 {%- if (not _brow) and _cc and ' ' in _cc -%}
-  {%- set _brow = frappe.db.get_value('Brand', _cc.split(' ', 1)[0], ['name', 'image'], as_dict=True) -%}
+  {%- set _first = _cc.split(' ', 1)[0] -%}
+  {%- set _ = _tried.append(_first) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _first, ['name', 'image'], as_dict=True) -%}
 {%- endif -%}
 {%- set _bimg = (_brow.image if _brow else None) -%}
 {%- if _bimg and not (_bimg.startswith('http://') or _bimg.startswith('https://') or _bimg.startswith('data:')) -%}
   {%- set _bimg = frappe.utils.get_url(_bimg) -%}
 {%- endif -%}
-{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
+{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': _tried} -%}
 
 {# ── Product Bundle expansion ────────────────────────────────────
    doc.packed_items is populated by ERPNext whenever a Sales Invoice line

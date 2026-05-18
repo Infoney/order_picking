@@ -52,6 +52,16 @@ def setup_custom_fields():
 				"in_standard_filter": 1,
 				"description": "B2B Order Pick status"
 			}
+		],
+		"Cost Center": [
+			{
+				"fieldname": "custom_brand",
+				"label": "Brand",
+				"fieldtype": "Link",
+				"options": "Brand",
+				"insert_after": "cost_center_name",
+				"description": "Brand logo to use on Sales Invoice / Pick List prints whose cost_center is this. Overrides name-based brand matching."
+			}
 		]
 	}
 	create_custom_fields(custom_fields, update=True)
