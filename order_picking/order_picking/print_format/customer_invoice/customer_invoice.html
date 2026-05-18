@@ -1,11 +1,25 @@
 {#-
-  Customer Invoice — Mizan/PALCO style: green status pill, big brand title,
-  card-based info groups, metric strip, calm tables with right-aligned numbers.
+  Customer Invoice — Mizan/PALCO style.
   Brand is resolved from cost center (e.g. "Ahuhu - KPG" -> Brand "Ahuhu").
+  Brand lookup is inline (using frappe.db.get_value) so the template works
+  even if the order_picking.jinja helpers aren't registered in jenv.
 -#}
-{%- set brand = brand_for_cost_center(doc.cost_center) -%}
+{%- set _cc = (doc.cost_center or '').rsplit(' - ', 1)[0].strip() -%}
+{%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) if _cc else None -%}
+{%- if (not _brow) and _cc and ' ' in _cc -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc.split(' ', 1)[0], ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
+{%- set _bimg = (_brow.image if _brow else None) -%}
+{%- if _bimg and not (_bimg.startswith('http://') or _bimg.startswith('https://') or _bimg.startswith('data:')) -%}
+  {%- set _bimg = frappe.utils.get_url(_bimg) -%}
+{%- endif -%}
+{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
 {%- set cur = doc.currency or 'KWD' -%}
 {%- macro money(v) -%}{{ frappe.utils.fmt_money(v or 0, currency=cur) }}{%- endmacro -%}
+{%- macro barcode(v) -%}
+  {%- if render_barcode is defined -%}{{ render_barcode(v) | safe }}
+  {%- else -%}<span class="bc-fallback">{{ v }}</span>{%- endif -%}
+{%- endmacro -%}
 
 <style>
   @page { margin: 14mm 16mm 18mm; }
@@ -225,7 +239,7 @@
   </div>
   <div class="right">
     <div class="kv"><strong>Invoice:</strong> {{ doc.name }}</div>
-    <div class="inv-barcode">{{ render_barcode(doc.name) | safe }}</div>
+    <div class="inv-barcode">{{ barcode(doc.name) }}</div>
     <div class="kv"><strong>Currency:</strong> {{ cur }}</div>
     <div class="kv">Date: {{ frappe.utils.formatdate(doc.posting_date) }}</div>
   </div>
