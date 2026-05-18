@@ -1,0 +1,16 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Claude Code workspace (per-developer)
+.claude/
+
+# Local preview server for print-format design iteration
+.preview/
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+.DS_Store

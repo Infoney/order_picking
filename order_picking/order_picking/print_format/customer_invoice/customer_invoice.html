@@ -1,0 +1,403 @@
+{#-
+  Customer Invoice — Mizan/PALCO style.
+  Brand is resolved from cost center (e.g. "Ahuhu - KPG" -> Brand "Ahuhu").
+  Brand lookup is inline (using frappe.db.get_value) so the template works
+  even if the order_picking.jinja helpers aren't registered in jenv.
+-#}
+{%- set _cc = (doc.cost_center or '').rsplit(' - ', 1)[0].strip() -%}
+{%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) if _cc else None -%}
+{%- if (not _brow) and _cc and ' ' in _cc -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc.split(' ', 1)[0], ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
+{%- set _bimg = (_brow.image if _brow else None) -%}
+{%- if _bimg and not (_bimg.startswith('http://') or _bimg.startswith('https://') or _bimg.startswith('data:')) -%}
+  {%- set _bimg = frappe.utils.get_url(_bimg) -%}
+{%- endif -%}
+{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
+{%- set cur = doc.currency or 'KWD' -%}
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(v or 0, currency=cur) }}{%- endmacro -%}
+{%- macro barcode(v, h='40', w='1.0') -%}
+  <span class="bc-wrap">
+    <svg class="js-barcode" data-value="{{ v }}" data-bar-w="{{ w }}" data-bar-h="{{ h }}"></svg>
+    <span class="bc-text">{{ v }}</span>
+  </span>
+{%- endmacro -%}
+
+<style>
+  @page { margin: 14mm 16mm 18mm; }
+
+  /* ── base ────────────────────────────────────────────────────────── */
+  body {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #1f2937; font-size: 12px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── top status strip ────────────────────────────────────────────── */
+  .top-strip {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1.5px solid #16a34a;
+    color: #16a34a;
+    border-radius: 4px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 1.2px; text-transform: uppercase;
+  }
+  .printed-ts { font-size: 10px; color: #6b7280; }
+
+  /* ── header (brand + meta) ───────────────────────────────────────── */
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .head .left .doc-kind {
+    font-size: 12px; font-weight: 700; color: #1f2937;
+    letter-spacing: 0.6px; margin-bottom: 4px;
+  }
+  .head .left .brand-name {
+    font-size: 32px; font-weight: 800; color: #0f172a;
+    letter-spacing: -0.4px; line-height: 1;
+  }
+  .head .left .brand img {
+    max-height: 56px; max-width: 240px; object-fit: contain;
+    display: block; margin-top: 2px;
+  }
+  .head .right { text-align: right; font-size: 12px; line-height: 1.7; }
+  .head .right .kv { color: #6b7280; }
+  .head .right .kv strong { color: #1f2937; font-weight: 700; }
+  .head .right .inv-barcode {
+    display: inline-block; margin-top: 6px;
+    padding: 6px 10px 4px;
+    border: 1px solid #e5e7eb; border-radius: 4px;
+    background: #fff; line-height: 0;
+  }
+  .head .right .inv-barcode .bc-wrap { display: block; }
+  .head .right .inv-barcode .bc-wrap svg {
+    display: block; height: 44px; max-width: 240px;
+  }
+  .head .right .inv-barcode .bc-text {
+    display: block; margin-top: 3px;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 10px; color: #4b5563; letter-spacing: 0.6px;
+    line-height: 1.2; text-align: center;
+  }
+  .head .right .inv-barcode .bc-fallback {
+    display: inline-block;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 11px; color: #0f172a;
+    background: #f3f4f6; padding: 4px 8px; border-radius: 3px;
+    letter-spacing: 1.5px;
+  }
+  .rule { border: 0; border-top: 1px solid #e5e7eb; margin: 4px 0 18px; }
+
+  /* ── info card (party + meta inline rows) ────────────────────────── */
+  .info-card {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 14px 18px; margin-bottom: 20px;
+  }
+  .info-card .row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+  }
+  .info-card .item .k { color: #6b7280; }
+  .info-card .item .v { color: #1f2937; font-weight: 700; margin-left: 4px; }
+
+  /* ── section title (green vbar + uppercase) ──────────────────────── */
+  .sec-title {
+    display: flex; align-items: center; margin: 0 0 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: #1f2937;
+  }
+  .sec-title::before {
+    content: ""; display: inline-block;
+    width: 3px; height: 14px; background: #16a34a;
+    margin-right: 10px; border-radius: 1px;
+  }
+  .sec-sub { font-size: 11px; color: #6b7280; margin: -6px 0 12px; }
+
+  /* ── address pair (two cards) ────────────────────────────────────── */
+  .addr-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px; margin-bottom: 22px;
+  }
+  .addr {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 14px 16px; page-break-inside: avoid;
+  }
+  .addr .k {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 6px;
+  }
+  .addr .name {
+    font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 3px;
+  }
+  .addr .lines { font-size: 11px; color: #4b5563; line-height: 1.6; }
+
+  /* ── items table ─────────────────────────────────────────────────── */
+  table.items {
+    border-collapse: collapse; width: 100%;
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    margin-bottom: 16px;
+  }
+  table.items thead th {
+    background: #f9fafb; color: #374151;
+    text-align: left; padding: 10px 12px;
+    font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.5px; text-transform: uppercase;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  table.items thead th.r { text-align: right; }
+  table.items tbody tr { page-break-inside: avoid; }
+  table.items tbody td {
+    padding: 11px 12px; border-bottom: 1px solid #f1f5f9;
+    font-size: 12px; vertical-align: top;
+  }
+  table.items tbody tr:last-child td { border-bottom: 0; }
+  table.items tbody td.r { text-align: right; }
+  table.items .idx { color: #9ca3af; width: 32px; }
+  table.items .sku { font-weight: 700; color: #0f172a; }
+  table.items .name { color: #374151; }
+  table.items .desc {
+    color: #6b7280; font-size: 10.5px; margin-top: 3px; line-height: 1.5;
+  }
+
+  /* ── totals card ─────────────────────────────────────────────────── */
+  .totals {
+    margin-left: auto; width: 340px;
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    overflow: hidden; page-break-inside: avoid;
+  }
+  .totals .row {
+    display: flex; justify-content: space-between;
+    padding: 9px 16px; font-size: 12px; color: #374151;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .totals .row:last-child { border-bottom: 0; }
+  .totals .row .v { color: #0f172a; font-weight: 600; }
+  .totals .row.discount { color: #b91c1c; }
+  .totals .row.discount .v { color: #b91c1c; }
+  .totals .row.grand {
+    background: #f9fafb;
+    font-size: 14px; font-weight: 700; color: #0f172a;
+    padding: 12px 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .totals .row.grand .v {
+    color: #16a34a; font-size: 16px; font-weight: 800;
+  }
+  .in-words {
+    width: 340px; margin-left: auto; margin-top: 6px;
+    text-align: right; font-style: italic; font-size: 10px; color: #9ca3af;
+  }
+
+  /* ── terms ───────────────────────────────────────────────────────── */
+  .terms {
+    margin-top: 22px; padding: 14px 16px;
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    font-size: 11px; color: #4b5563; line-height: 1.6;
+    page-break-inside: avoid;
+  }
+  .terms .lbl {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 6px;
+  }
+
+  /* ── footer ──────────────────────────────────────────────────────── */
+  .footer {
+    margin-top: 26px; padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .footer .company {
+    text-align: center;
+    font-size: 11px; font-weight: 700; color: #1f2937;
+    letter-spacing: 0.4px; margin-bottom: 6px;
+  }
+  .footer .meta {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #6b7280;
+  }
+</style>
+
+{# ── Top status strip ────────────────────────────────────────────── #}
+<div class="top-strip">
+  <span class="pill">Customer Copy</span>
+  <span class="printed-ts">Printed: {{ frappe.utils.format_datetime(frappe.utils.now()) }}</span>
+</div>
+
+{# ── Header ──────────────────────────────────────────────────────── #}
+<div class="head">
+  <div class="left">
+    <div class="brand">
+      {% if brand.image %}
+        <img src="{{ brand.image }}" alt="{{ brand.name }}">
+      {% else %}
+        <div class="brand-name">{{ (brand.name or doc.company) | upper }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="right">
+    <div class="kv"><strong>Invoice:</strong> {{ doc.name }}</div>
+    <div class="inv-barcode">{{ barcode(doc.name) }}</div>
+    <div class="kv"><strong>Currency:</strong> {{ cur }}</div>
+    <div class="kv">Date: {{ frappe.utils.formatdate(doc.posting_date) }}</div>
+  </div>
+</div>
+<hr class="rule">
+
+{# ── Info card: customer / territory / due / PO ─────────────────── #}
+<div class="info-card">
+  <div class="row">
+    <div class="item">
+      <span class="k">Customer:</span><span class="v">{{ doc.customer_name or doc.customer }}</span>
+    </div>
+    <div class="item">
+      <span class="k">Territory:</span><span class="v">{{ doc.territory or '—' }}</span>
+    </div>
+    <div class="item">
+      <span class="k">Invoice Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.posting_date) }}</span>
+    </div>
+    <div class="item">
+      <span class="k">Due Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.due_date) if doc.due_date else '—' }}</span>
+    </div>
+    {% if doc.po_no %}
+    <div class="item">
+      <span class="k">Customer PO:</span><span class="v">{{ doc.po_no }}</span>
+    </div>
+    {% endif %}
+    {% if doc.contact_display %}
+    <div class="item">
+      <span class="k">Contact:</span><span class="v">{{ doc.contact_display }}</span>
+    </div>
+    {% endif %}
+    {% if doc.contact_mobile or doc.contact_phone %}
+    <div class="item">
+      <span class="k">Phone:</span><span class="v num">{{ doc.contact_mobile or doc.contact_phone }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Addresses ──────────────────────────────────────────────────── #}
+<div class="sec-title">Billing &amp; Shipping</div>
+<div class="addr-grid">
+  <div class="addr">
+    <div class="k">Bill To</div>
+    <div class="name">{{ doc.customer_name or doc.customer }}</div>
+    <div class="lines">{{ doc.address_display or '—' | safe }}</div>
+  </div>
+  {% if doc.shipping_address %}
+  <div class="addr">
+    <div class="k">Ship To</div>
+    <div class="name">{{ doc.shipping_address_name or doc.customer_name or doc.customer }}</div>
+    <div class="lines">{{ doc.shipping_address | safe }}</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Items ──────────────────────────────────────────────────────── #}
+<div class="sec-title">Items</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th class="idx">#</th>
+      <th>Item</th>
+      <th class="r">Qty</th>
+      <th class="r">Rate</th>
+      <th class="r">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in doc.items %}
+    <tr>
+      <td class="idx num">{{ loop.index }}</td>
+      <td>
+        <div><span class="sku">{{ item.item_code }}</span>
+          {% if item.item_name and item.item_name != item.item_code %}
+            &nbsp;&middot;&nbsp;<span class="name">{{ item.item_name }}</span>
+          {% endif %}
+        </div>
+        {% if item.description and item.description | striptags | trim != (item.item_name or '') | trim %}
+          <div class="desc">{{ item.description | striptags | truncate(200) }}</div>
+        {% endif %}
+      </td>
+      <td class="r num">{{ item.qty }} <span style="color:#9ca3af">{{ item.uom or '' }}</span></td>
+      <td class="r num">{{ money(item.rate) }}</td>
+      <td class="r num">{{ money(item.amount) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# ── Totals ─────────────────────────────────────────────────────── #}
+<div class="totals">
+  <div class="row">
+    <span>Subtotal</span>
+    <span class="v num">{{ money(doc.total) }}</span>
+  </div>
+  {% if doc.discount_amount and doc.discount_amount > 0 %}
+  <div class="row discount">
+    <span>Discount{% if doc.additional_discount_percentage %} ({{ doc.additional_discount_percentage }}%){% endif %}</span>
+    <span class="v num">− {{ money(doc.discount_amount) }}</span>
+  </div>
+  {% endif %}
+  {% if doc.total_taxes_and_charges and doc.total_taxes_and_charges != 0 %}
+  <div class="row">
+    <span>{{ doc.taxes_and_charges or 'Tax' }}</span>
+    <span class="v num">{{ money(doc.total_taxes_and_charges) }}</span>
+  </div>
+  {% endif %}
+  <div class="row grand">
+    <span>Grand Total</span>
+    <span class="v num">{{ money(doc.grand_total) }}</span>
+  </div>
+</div>
+{% if doc.in_words %}<div class="in-words">{{ doc.in_words }}</div>{% endif %}
+
+{# ── Terms ─────────────────────────────────────────────────────── #}
+{% if doc.terms %}
+<div class="terms">
+  <div class="lbl">Terms &amp; Conditions</div>
+  {{ doc.terms | safe }}
+</div>
+{% endif %}
+
+{# ── Footer ────────────────────────────────────────────────────── #}
+<div class="footer">
+  <div class="company">{{ doc.company }}</div>
+  <div class="meta">
+    <div>Printed by: {{ frappe.session.user if frappe.session else '—' }}</div>
+    <div>Generated: {{ frappe.utils.format_datetime(frappe.utils.now()) }}</div>
+  </div>
+</div>
+{%- if not brand.found %}
+<!-- brand lookup: no Brand record matched. cost_center="{{ doc.cost_center }}", tried={{ brand.tried }} -->
+{%- endif %}
+
+{# ── Barcode rendering (client-side, no server deps) ──────────── #}
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+(function () {
+  function render() {
+    if (typeof JsBarcode === 'undefined') return setTimeout(render, 50);
+    document.querySelectorAll('svg.js-barcode').forEach(function (el) {
+      if (el.dataset.rendered) return;
+      try {
+        JsBarcode(el, el.getAttribute('data-value'), {
+          format: 'CODE128',
+          width: parseFloat(el.getAttribute('data-bar-w')) || 1.0,
+          height: parseFloat(el.getAttribute('data-bar-h')) || 40,
+          displayValue: false,
+          margin: 2,
+        });
+        el.dataset.rendered = '1';
+      } catch (e) { /* leave svg empty if encoding fails */ }
+    });
+  }
+  render();
+})();
+</script>

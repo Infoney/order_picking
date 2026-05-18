@@ -7,7 +7,12 @@ description = "Order Picking App for ERPNext to ensure 100% accurate deliveries"
 requires-python = ">=3.10"
 readme = "README.md"
 version = "0.0.1"
-dependencies = []
+dependencies = [
+    # Used by order_picking.jinja.render_barcode to draw scannable Code-128
+    # barcodes on the Sales Invoice Pick List print format. If the package
+    # is not installed the helper falls back to monospaced text.
+    "python-barcode>=0.15.1",
+]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
