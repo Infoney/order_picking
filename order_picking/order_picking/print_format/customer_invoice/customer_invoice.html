@@ -95,17 +95,33 @@
   }
   .rule { border: 0; border-top: 1px solid #e5e7eb; margin: 4px 0 18px; }
 
-  /* ── info card (party + meta inline rows) ────────────────────────── */
+  /* ── info card (3 columns: customer / bill to / ship to) ─────────── */
   .info-card {
     border: 1px solid #e5e7eb; border-radius: 6px;
-    padding: 14px 18px; margin-bottom: 20px;
+    padding: 14px 18px; margin-bottom: 18px;
   }
   .info-card .row {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px 24px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px 24px;
   }
-  .info-card .item .k { color: #6b7280; }
-  .info-card .item .v { color: #1f2937; font-weight: 700; margin-left: 4px; }
+  .info-card .col .col-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6b7280;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .info-card .col .col-name {
+    font-size: 13px; font-weight: 700; color: #0f172a;
+    margin-bottom: 6px; letter-spacing: -0.1px;
+  }
+  .info-card .col .col-lines {
+    font-size: 11px; color: #4b5563; line-height: 1.6;
+  }
+  .info-card .col .col-meta { font-size: 11px; line-height: 1.7; }
+  .info-card .col .col-meta .k { color: #6b7280; }
+  .info-card .col .col-meta .v {
+    color: #1f2937; font-weight: 600; margin-left: 3px;
+  }
 
   /* ── section title (green vbar + uppercase) ──────────────────────── */
   .sec-title {
@@ -242,61 +258,41 @@
   </div>
   <div class="right">
     <div class="kv"><strong>Invoice:</strong> {{ doc.name }}</div>
-    <div class="inv-barcode">{{ barcode(doc.name) }}</div>
     <div class="kv"><strong>Currency:</strong> {{ cur }}</div>
     <div class="kv">Date: {{ frappe.utils.formatdate(doc.posting_date) }}</div>
   </div>
 </div>
 <hr class="rule">
 
-{# ── Info card: customer / territory / due / PO ─────────────────── #}
+{# ── Customer card: customer info | bill to | ship to (3 cols) ─── #}
 <div class="info-card">
   <div class="row">
-    <div class="item">
-      <span class="k">Customer:</span><span class="v">{{ doc.customer_name or doc.customer }}</span>
+    <div class="col">
+      <div class="col-label">Customer</div>
+      <div class="col-name">{{ doc.customer_name or doc.customer }}</div>
+      <div class="col-meta">
+        {% if doc.territory %}<div><span class="k">Territory:</span><span class="v">{{ doc.territory }}</span></div>{% endif %}
+        <div><span class="k">Due Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.due_date) if doc.due_date else '—' }}</span></div>
+        {% if doc.po_no %}<div><span class="k">PO:</span><span class="v">{{ doc.po_no }}</span></div>{% endif %}
+        {% if doc.contact_display %}<div><span class="k">Contact:</span><span class="v">{{ doc.contact_display }}</span></div>{% endif %}
+        {% if doc.contact_mobile or doc.contact_phone %}<div><span class="k">Phone:</span><span class="v num">{{ doc.contact_mobile or doc.contact_phone }}</span></div>{% endif %}
+      </div>
     </div>
-    <div class="item">
-      <span class="k">Territory:</span><span class="v">{{ doc.territory or '—' }}</span>
+    <div class="col">
+      <div class="col-label">Bill To</div>
+      <div class="col-name">{{ doc.customer_name or doc.customer }}</div>
+      <div class="col-lines">{{ doc.address_display or '—' | safe }}</div>
     </div>
-    <div class="item">
-      <span class="k">Invoice Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.posting_date) }}</span>
+    <div class="col">
+      <div class="col-label">Ship To</div>
+      {% if doc.shipping_address %}
+      <div class="col-name">{{ doc.shipping_address_name or doc.customer_name or doc.customer }}</div>
+      <div class="col-lines">{{ doc.shipping_address | safe }}</div>
+      {% else %}
+      <div class="col-lines" style="font-style:italic;color:#9ca3af">Same as billing</div>
+      {% endif %}
     </div>
-    <div class="item">
-      <span class="k">Due Date:</span><span class="v num">{{ frappe.utils.formatdate(doc.due_date) if doc.due_date else '—' }}</span>
-    </div>
-    {% if doc.po_no %}
-    <div class="item">
-      <span class="k">Customer PO:</span><span class="v">{{ doc.po_no }}</span>
-    </div>
-    {% endif %}
-    {% if doc.contact_display %}
-    <div class="item">
-      <span class="k">Contact:</span><span class="v">{{ doc.contact_display }}</span>
-    </div>
-    {% endif %}
-    {% if doc.contact_mobile or doc.contact_phone %}
-    <div class="item">
-      <span class="k">Phone:</span><span class="v num">{{ doc.contact_mobile or doc.contact_phone }}</span>
-    </div>
-    {% endif %}
   </div>
-</div>
-
-{# ── Addresses ──────────────────────────────────────────────────── #}
-<div class="sec-title">Billing &amp; Shipping</div>
-<div class="addr-grid">
-  <div class="addr">
-    <div class="k">Bill To</div>
-    <div class="name">{{ doc.customer_name or doc.customer }}</div>
-    <div class="lines">{{ doc.address_display or '—' | safe }}</div>
-  </div>
-  {% if doc.shipping_address %}
-  <div class="addr">
-    <div class="k">Ship To</div>
-    <div class="name">{{ doc.shipping_address_name or doc.customer_name or doc.customer }}</div>
-    <div class="lines">{{ doc.shipping_address | safe }}</div>
-  </div>
-  {% endif %}
 </div>
 
 {# ── Items ──────────────────────────────────────────────────────── #}
@@ -377,27 +373,3 @@
 {%- if not brand.found %}
 <!-- brand lookup: no Brand record matched. cost_center="{{ doc.cost_center }}", tried={{ brand.tried }} -->
 {%- endif %}
-
-{# ── Barcode rendering (client-side, no server deps) ──────────── #}
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script>
-(function () {
-  function render() {
-    if (typeof JsBarcode === 'undefined') return setTimeout(render, 50);
-    document.querySelectorAll('svg.js-barcode').forEach(function (el) {
-      if (el.dataset.rendered) return;
-      try {
-        JsBarcode(el, el.getAttribute('data-value'), {
-          format: 'CODE128',
-          width: parseFloat(el.getAttribute('data-bar-w')) || 1.0,
-          height: parseFloat(el.getAttribute('data-bar-h')) || 40,
-          displayValue: false,
-          margin: 2,
-        });
-        el.dataset.rendered = '1';
-      } catch (e) { /* leave svg empty if encoding fails */ }
-    });
-  }
-  render();
-})();
-</script>
