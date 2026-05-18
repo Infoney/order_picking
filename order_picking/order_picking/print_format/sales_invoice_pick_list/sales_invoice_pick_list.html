@@ -4,17 +4,46 @@
   Brand lookup is inline (using frappe.db.get_value) so the template works
   even if the order_picking.jinja helpers aren't registered in jenv.
 -#}
+{# 1) Explicit mapping via Cost Center.custom_brand (preferred). #}
+{# 2) Else strip " - <Company>" suffix and match Brand by exact name. #}
+{# 3) Else try the first word of the cleaned name (e.g. "Ahuhu Care" -> "Ahuhu"). #}
+{%- set _cc_brand = frappe.db.get_value('Cost Center', doc.cost_center, 'custom_brand') if doc.cost_center else None -%}
 {%- set _cc = (doc.cost_center or '').rsplit(' - ', 1)[0].strip() -%}
-{%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) if _cc else None -%}
+{%- set _tried = [] -%}
+{%- set _brow = None -%}
+{%- if _cc_brand -%}
+  {%- set _ = _tried.append('Cost Center.custom_brand=' ~ _cc_brand) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc_brand, ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
+{%- if (not _brow) and _cc -%}
+  {%- set _ = _tried.append(_cc) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _cc, ['name', 'image'], as_dict=True) -%}
+{%- endif -%}
 {%- if (not _brow) and _cc and ' ' in _cc -%}
-  {%- set _brow = frappe.db.get_value('Brand', _cc.split(' ', 1)[0], ['name', 'image'], as_dict=True) -%}
+  {%- set _first = _cc.split(' ', 1)[0] -%}
+  {%- set _ = _tried.append(_first) -%}
+  {%- set _brow = frappe.db.get_value('Brand', _first, ['name', 'image'], as_dict=True) -%}
 {%- endif -%}
 {%- set _bimg = (_brow.image if _brow else None) -%}
 {%- if _bimg and not (_bimg.startswith('http://') or _bimg.startswith('https://') or _bimg.startswith('data:')) -%}
   {%- set _bimg = frappe.utils.get_url(_bimg) -%}
 {%- endif -%}
-{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': [_cc]} -%}
-{%- set total_qty = doc.total_qty or (doc.items | sum(attribute='qty')) -%}
+{%- set brand = {'name': (_brow.name if _brow else (_cc or doc.company)), 'image': _bimg, 'found': (_brow is not none), 'tried': _tried} -%}
+
+{# ── Product Bundle expansion ────────────────────────────────────
+   doc.packed_items is populated by ERPNext whenever a Sales Invoice line
+   is a Product Bundle. It contains the actual physical items to pick,
+   linked back to their bundle parent via `parent_item` (item_code) and
+   `parent_detail_docname` (the bundle row's child-row name).
+   For the pick list we hide the bundle parent rows and show only the
+   sub-items, grouped under a header so the picker knows which bundle. #}
+{%- set _packed = doc.packed_items or [] -%}
+{%- set _bundle_parents = _packed | map(attribute='parent_item') | unique | list -%}
+{%- set _regular_items = doc.items | rejectattr('item_code', 'in', _bundle_parents) | list -%}
+{%- set _bundle_items  = doc.items | selectattr('item_code', 'in', _bundle_parents) | list -%}
+
+{%- set total_lines = (_regular_items | length) + (_packed | length) -%}
+{%- set total_qty = (_regular_items | sum(attribute='qty')) + (_packed | sum(attribute='qty')) -%}
 {%- macro barcode(v, h='40', w='1.0') -%}
   <span class="bc-wrap">
     <svg class="js-barcode" data-value="{{ v }}" data-bar-w="{{ w }}" data-bar-h="{{ h }}"></svg>
@@ -161,6 +190,29 @@
   table.items tbody td.r { text-align: right; }
   table.items tbody td.c { text-align: center; }
 
+  /* ── bundle parent (header row) + sub-items ──────────────────────── */
+  table.items tbody tr.bundle-header td {
+    background: #ecfdf5 !important;
+    border-top: 2px solid #16a34a;
+    padding: 8px 12px;
+    font-size: 11px; color: #064e3b;
+    letter-spacing: 0.2px;
+  }
+  table.items tbody tr.bundle-header .bundle-badge {
+    display: inline-block;
+    padding: 2px 8px; margin-right: 8px;
+    font-size: 9px; font-weight: 800; letter-spacing: 1.2px;
+    text-transform: uppercase;
+    background: #16a34a; color: #fff; border-radius: 3px;
+  }
+  table.items tbody tr.bundle-header .bundle-times {
+    color: #16a34a; font-weight: 700;
+  }
+  table.items tbody tr.bundle-sub td { background: #f0fdf4 !important; }
+  table.items tbody tr.bundle-sub .sub-arrow {
+    color: #16a34a; font-weight: 700; margin-right: 4px;
+  }
+
   .idx { color: #9ca3af; width: 28px; }
   .check-box {
     display: inline-block; width: 20px; height: 20px;
@@ -251,7 +303,7 @@
   <div class="right">
     <div class="kv"><strong>Invoice:</strong> {{ doc.name }}</div>
     <div class="inv-barcode">{{ barcode(doc.name) }}</div>
-    <div class="kv"><strong>Lines:</strong> {{ doc.items | length }}</div>
+    <div class="kv"><strong>Lines:</strong> {{ total_lines }}</div>
     <div class="kv">Date: {{ frappe.utils.formatdate(doc.posting_date) }}</div>
   </div>
 </div>
@@ -280,8 +332,8 @@
 <div class="metrics">
   <div class="metric">
     <div class="k">Total Lines</div>
-    <div class="v num">{{ doc.items | length }}</div>
-    <div class="sub">SKUs to pick</div>
+    <div class="v num">{{ total_lines }}</div>
+    <div class="sub">SKUs to pick (incl. bundle items)</div>
   </div>
   <div class="metric">
     <div class="k">Total Qty</div>
@@ -296,6 +348,29 @@
 </div>
 
 {# ── Items ──────────────────────────────────────────────────────── #}
+{%- macro pick_row(idx, item_code, item_name, qty, uom, warehouse, is_sub=False) -%}
+  {%- set bcs = frappe.db.get_all('Item Barcode',
+        filters={'parent': item_code}, fields=['barcode'],
+        order_by='idx asc', limit=1) -%}
+  {%- set bc = bcs[0].barcode if bcs else item_code -%}
+  <tr{% if is_sub %} class="bundle-sub"{% endif %}>
+    <td class="idx num">{{ idx }}</td>
+    <td class="c"><span class="check-box"></span></td>
+    <td>
+      <div class="sku">{% if is_sub %}<span class="sub-arrow">↳</span> {% endif %}{{ item_code }}</div>
+      {% if item_name and item_name != item_code %}
+        <div class="iname">{{ item_name }}</div>
+      {% endif %}
+    </td>
+    <td>{{ barcode(bc, h='32', w='0.9') }}</td>
+    <td class="r">
+      <span class="qty-big num">{{ qty }}</span>
+      <span class="uom-small">{{ uom or 'Nos' }}</span>
+    </td>
+    <td style="font-size:11px; color:#4b5563">{{ warehouse or '—' }}</td>
+  </tr>
+{%- endmacro -%}
+
 <div class="sec-title">Items</div>
 <table class="items">
   <thead>
@@ -309,31 +384,35 @@
     </tr>
   </thead>
   <tbody>
-    {% for item in doc.items %}
-    {%- set barcodes = frappe.db.get_all(
-        'Item Barcode',
-        filters={'parent': item.item_code},
-        fields=['barcode'],
-        order_by='idx asc',
-        limit=1
-      ) -%}
-    {%- set bc = barcodes[0].barcode if barcodes else item.item_code -%}
-    <tr>
-      <td class="idx num">{{ loop.index }}</td>
-      <td class="c"><span class="check-box"></span></td>
-      <td>
-        <div class="sku">{{ item.item_code }}</div>
+    {%- set ns = namespace(idx=0) -%}
+
+    {# Regular (non-bundle) items #}
+    {% for item in _regular_items %}
+      {%- set ns.idx = ns.idx + 1 -%}
+      {{ pick_row(ns.idx, item.item_code, item.item_name, item.qty, item.uom, item.warehouse) }}
+    {% endfor %}
+
+    {# Bundle items: header row + each sub-item from packed_items #}
+    {% for item in _bundle_items %}
+    <tr class="bundle-header">
+      <td colspan="6">
+        <span class="bundle-badge">BUNDLE</span>
+        <strong>{{ item.item_code }}</strong>
         {% if item.item_name and item.item_name != item.item_code %}
-          <div class="iname">{{ item.item_name }}</div>
+          &nbsp;·&nbsp;{{ item.item_name }}
         {% endif %}
+        &nbsp;<span class="bundle-times">× {{ item.qty }}</span>
       </td>
-      <td>{{ barcode(bc, h='32', w='0.9') }}</td>
-      <td class="r">
-        <span class="qty-big num">{{ item.qty }}</span>
-        <span class="uom-small">{{ item.uom or 'Nos' }}</span>
-      </td>
-      <td style="font-size:11px; color:#4b5563">{{ item.warehouse or '—' }}</td>
     </tr>
+    {%- set _subs = _packed | selectattr('parent_detail_docname', 'equalto', item.name) | list -%}
+    {%- if not _subs -%}
+      {# Fallback when child-row link isn't set: match by parent_item code #}
+      {%- set _subs = _packed | selectattr('parent_item', 'equalto', item.item_code) | list -%}
+    {%- endif -%}
+    {% for sub in _subs %}
+      {%- set ns.idx = ns.idx + 1 -%}
+      {{ pick_row(ns.idx, sub.item_code, sub.item_name, sub.qty, sub.uom, sub.warehouse, is_sub=True) }}
+    {% endfor %}
     {% endfor %}
   </tbody>
 </table>
